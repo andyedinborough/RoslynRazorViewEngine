@@ -19,6 +19,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Emit;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.CSharp;
+using System.Text.RegularExpressions;
 
 namespace RoslynRazorViewEngine
 {
@@ -146,34 +147,39 @@ namespace RoslynRazorViewEngine
         private Assembly CompileCodeIntoAssembly(string code, string virtualPath)
         {
             // Parse the source file using Roslyn
-            SyntaxTree syntaxTree = SyntaxTree.ParseText(code);
+            SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(code);
 
             // Add all the references we need for the compilation
             var references = new List<MetadataReference>();
             foreach (Assembly referencedAssembly in BuildManager.GetReferencedAssemblies())
             {
-                references.Add(new MetadataFileReference(referencedAssembly.Location));
+                references.Add(MetadataReference.CreateFromFile(referencedAssembly.Location));
             }
 
-            var compilationOptions = new CompilationOptions(outputKind: OutputKind.DynamicallyLinkedLibrary);
+            var compilationOptions = new CSharpCompilationOptions(outputKind: OutputKind.DynamicallyLinkedLibrary);
 
             // Note: using a fixed assembly name, which doesn't matter as long as we don't expect cross references of generated assemblies
-            var compilation = Compilation.Create("SomeAssemblyName", compilationOptions, new[] { syntaxTree }, references);
+            var compilation = CSharpCompilation.Create(MakePathSafe(virtualPath), new[] { syntaxTree }, references, compilationOptions);
 
             // Generate the assembly into a memory stream
             var memStream = new MemoryStream();
-            EmitResult emitResult = compilation.Emit(memStream);
+            var emitResult = compilation.Emit(memStream);
 
             if (!emitResult.Success)
             {
                 Diagnostic diagnostic = emitResult.Diagnostics.First();
-                string message = diagnostic.Info.ToString();
-                LinePosition linePosition = diagnostic.Location.GetLineSpan(usePreprocessorDirectives: true).StartLinePosition;
+                string message = diagnostic.GetMessage();
+                LinePosition linePosition = diagnostic.Location.GetLineSpan().StartLinePosition;
 
                 throw new HttpParseException(message, null, virtualPath, null, linePosition.Line + 1);
             }
 
             return Assembly.Load(memStream.GetBuffer());
+        }
+
+        private string MakePathSafe(string value)
+        {
+            return  "RRVE_" + Regex.Replace(value, @"\W+", "_").TrimStart('_');
         }
 
         private HttpParseException CreateExceptionFromParserError(RazorError error, string virtualPath)

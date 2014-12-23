@@ -18,6 +18,21 @@
         </div>
     </section>
 }
+
+@DateTime.Now
+
+@{
+    if (Session["Test"] == null)
+    {
+        Session["Test"] = 1;
+        <text>:/</text>        
+    }
+}
+
+@Session["Test"]
+
+@Session.SessionID
+
 <h2>View assembly: @GetType().Assembly</h2>
 <h3>We suggest the following:</h3>
 <ol class="round">
